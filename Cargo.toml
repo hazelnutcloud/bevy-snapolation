@@ -1,6 +1,6 @@
 [package]
 name = "bevy-snapolation"
-version = "0.1.0"
+version = "0.1.1"
 authors = ["hazelnutcloud <hzlntcld@gmail.com>"]
 edition = "2021"
 description = "a snapshot interpolation library for bevy"
@@ -9,5 +9,5 @@ license = "MIT OR Apache-2.0"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-bevy = "0.7"
+bevy = { version = "0.7", default-features = false }
 serde = { version = "1.0", features = ["derive"] }
