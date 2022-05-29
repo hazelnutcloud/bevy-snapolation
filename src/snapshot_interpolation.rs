@@ -144,7 +144,7 @@ impl SnapshotInterpolation {
                                             interpolated_entity.state.insert(
                                                 state_key.clone(),
                                                 StateValue::Quat(
-                                                    older_quat.lerp(quat.clone(), percent),
+                                                    older_quat.lerp(*quat, percent),
                                                 ),
                                             );
                                         }
