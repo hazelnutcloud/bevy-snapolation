@@ -5,10 +5,10 @@ use std::{
 
 use bevy::utils::HashMap;
 
-use crate::vault::{Entities, SnapolationEntity, Snapshot, StateValue, Vault};
+use crate::vault::{SnapolationEntities, SnapolationEntity, Snapshot, StateValue, Vault};
 
 pub struct SnapshotInterpolation {
-    vault: Vault,
+    pub vault: Vault,
     interpolation_buffer: Duration,
     time_offset: i128,
     server_time: Duration,
@@ -17,24 +17,34 @@ pub struct SnapshotInterpolation {
 
 #[allow(dead_code)]
 pub struct InterpolatedSnapshot {
-	entities: Vec<SnapolationEntity>,
-	percentage: f32,
-	newer_id: u64,
-	older_id: u64
+    pub entities: Vec<SnapolationEntity>,
+    pub percentage: f32,
+    pub newer_id: u64,
+    pub older_id: u64,
 }
 
 impl SnapshotInterpolation {
-    pub fn new(server_fps: f32) -> SnapshotInterpolation {
+    pub fn new(server_fps: Option<f32>) -> SnapshotInterpolation {
+        if let Some(server_fps) = server_fps {
+            return SnapshotInterpolation {
+                vault: Vault::default(),
+                interpolation_buffer: Duration::from_secs_f32((1. / server_fps) * 3.),
+                time_offset: -1,
+                autocorrect_time_offset: true,
+                server_time: Duration::from_secs(0),
+            };
+        }
+
         SnapshotInterpolation {
             vault: Vault::default(),
-            interpolation_buffer: Duration::from_secs_f32((1. / server_fps) * 3.),
+            interpolation_buffer: Duration::from_millis(100),
             time_offset: -1,
             autocorrect_time_offset: true,
             server_time: Duration::from_secs(0),
         }
     }
 
-    pub fn create_snapshot(entities: Entities) -> Snapshot {
+    pub fn create_snapshot(entities: SnapolationEntities) -> Snapshot {
         let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap();
         Snapshot {
             id: now.as_millis() as u64,
@@ -92,14 +102,13 @@ impl SnapshotInterpolation {
             for entity in entities {
                 if let Some(older_entities) = older.entities.get(entity_key) {
                     if let Some(older_entity) = older_entities.iter().find(|e| e.id == entity.id) {
+                        let mut interpolated_entity = SnapolationEntity {
+                            id: entity.id,
+                            state: HashMap::new(),
+                        };
                         for state_key in state_keys.iter() {
                             if let Some(state_value) = entity.state.get(state_key) {
                                 if let Some(older_state_value) = older_entity.state.get(state_key) {
-                                    let mut interpolated_entity = SnapolationEntity {
-                                        id: entity.id,
-                                        state: HashMap::new(),
-                                    };
-
                                     match (state_value, older_state_value) {
                                         (
                                             StateValue::Number(number),
@@ -143,44 +152,56 @@ impl SnapshotInterpolation {
                                         (StateValue::Quat(quat), StateValue::Quat(older_quat)) => {
                                             interpolated_entity.state.insert(
                                                 state_key.clone(),
-                                                StateValue::Quat(
-                                                    older_quat.lerp(*quat, percent),
-                                                ),
+                                                StateValue::Quat(older_quat.lerp(*quat, percent)),
                                             );
                                         }
                                         _ => panic!("non-matching state value!"),
                                     }
-
-                                    interpolated_entities.push(interpolated_entity);
                                 }
                             }
                         }
+                        interpolated_entities.push(interpolated_entity);
                     }
                 }
             }
         }
 
-		InterpolatedSnapshot {
-			entities: interpolated_entities,
-			newer_id: newer.id,
-			older_id: older.id,
-			percentage: percent
-		}
+        InterpolatedSnapshot {
+            entities: interpolated_entities,
+            newer_id: newer.id,
+            older_id: older.id,
+            percentage: percent,
+        }
     }
 
-	pub fn calc_interpolation(&mut self, entity_key: &str, state_keys: Vec<String>) -> Option<InterpolatedSnapshot> {
-		let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap();
-		let server_time = now.as_millis() as i128 - self.time_offset - self.interpolation_buffer.as_millis() as i128;
+    pub fn calc_interpolation(
+        &mut self,
+        entity_key: &str,
+        state_keys: Vec<String>,
+    ) -> Option<InterpolatedSnapshot> {
+        let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap();
+        let server_time = now.as_millis() as i128
+            - self.time_offset
+            - self.interpolation_buffer.as_millis() as i128;
 
-		if let Some(shots) = self.vault.get_two_closest(Duration::from_millis(server_time as u64)) {
-			if let Some(newer) = shots.first().unwrap() {
-				if let Some(older) = shots.last().unwrap() {
-					return Some(self.interpolate(newer, older, Duration::from_millis(server_time as u64), entity_key, state_keys));
-				}
-			}
-		}
-		None
-	}
+        if let Some(shots) = self
+            .vault
+            .get_two_closest(Duration::from_millis(server_time as u64))
+        {
+            if let Some(newer) = shots.first().unwrap() {
+                if let Some(older) = shots.last().unwrap() {
+                    return Some(self.interpolate(
+                        newer,
+                        older,
+                        Duration::from_millis(server_time as u64),
+                        entity_key,
+                        state_keys,
+                    ));
+                }
+            }
+        }
+        None
+    }
 }
 
 fn time_lerp(start: u128, end: u128, t: f32) -> u128 {
@@ -225,18 +246,18 @@ fn radian_lerp(start: f32, mut end: f32, t: f32) -> f32 {
         result = lerp(start, end, t);
         if result >= PI * 2. {
             result -= PI * 2.;
-			return result;
+            return result;
         }
     } else if diff > PI {
         end -= PI * 2.;
         result = lerp(start, end, t);
         if result < 0. {
             result += PI * 2.;
-			return result;
+            return result;
         }
     } else {
         result = lerp(start, end, t);
-		return result;
+        return result;
     }
 
     result

@@ -13,10 +13,10 @@ pub struct Vault {
 pub struct Snapshot {
     pub id: u64,
     pub time: Duration,
-    pub entities: Entities
+    pub entities: SnapolationEntities
 }
 
-pub type Entities = HashMap<String, Vec<SnapolationEntity>>;
+pub type SnapolationEntities = HashMap<String, Vec<SnapolationEntity>>;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub enum StateValue {
@@ -41,8 +41,9 @@ impl Vault {
         self.vault.clear();
     }
 
-    pub fn get_latest(&self) -> Option<&Snapshot> {
-        self.vault.last()
+    pub fn get_latest(&mut self) -> Option<&Snapshot> {
+        self.vault.sort_unstable_by(|a, b| { b.time.cmp(&a.time) });
+        self.vault.first()
     }
 
     pub fn get_two_closest(&self, time: Duration) -> Option<Vec<Option<Snapshot>>> {
@@ -62,20 +63,22 @@ impl Vault {
         None
     }
 
-    pub fn get_closest(&mut self, time: Duration) -> Option<&Snapshot> {
-        self.vault.sort_unstable_by(|a, b| { b.time.cmp(&a.time) });
+    pub fn get_closest(&self, time: Duration) -> Option<Snapshot> {
+        let mut sorted = self.vault.clone();
+        sorted.sort_unstable_by(|a, b| { b.time.cmp(&a.time) });
 
-        for (index, snapshot) in self.vault.iter().enumerate() {
+        for (index, snapshot) in sorted.iter().enumerate() {
             if snapshot.time.le(&time) {
-                if let Some(newer_snapshot) = self.vault.get(index - 1) {
+                if index == 0 { return Some(snapshot.clone()) }
+                if let Some(newer_snapshot) = sorted.get(index - 1) {
                     let older = (time.as_millis() as i128 - snapshot.time.as_millis() as i128).abs();
                     let newer = (time.as_millis() as i128 - newer_snapshot.time.as_millis() as i128).abs();
                     if newer <= older {
-                        return Some(snapshot);
+                        return Some(newer_snapshot.clone());
                     }
-                    return Some(newer_snapshot);
+                    return Some(snapshot.clone());
                 } else {
-                    return Some(snapshot);
+                    return Some(snapshot.clone());
                 }
             }
         }
